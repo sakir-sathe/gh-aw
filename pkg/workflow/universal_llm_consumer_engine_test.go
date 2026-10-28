@@ -70,7 +70,7 @@ func TestUniversalLLMConsumerEngine_ProviderURLsFollowNetworkTopology(t *testing
 			name:        "host-access runtime",
 			model:       "anthropic/claude-sonnet-4.6",
 			runtime:     AgentRuntimeDockerSudoIptables,
-			expectedURL: "http://host.docker.internal:" + strconv.Itoa(constants.ClaudeLLMGatewayPort),
+			expectedURL: "http://api-proxy:" + strconv.Itoa(constants.ClaudeLLMGatewayPort),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

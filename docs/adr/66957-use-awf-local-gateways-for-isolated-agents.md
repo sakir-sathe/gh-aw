@@ -12,13 +12,15 @@ Agentic engines (Claude, Copilot BYOK, Gemini, and universal LLM-consumer engine
 
 ### Decision
 
-We will select the LLM gateway hostname based on the workflow's network topology in a single shared helper in `pkg/workflow/llm_provider.go`: emit `api-proxy` when `isAWFNetworkIsolationEnabled(workflowData)` is true, and retain `host.docker.internal` otherwise. All engines that build gateway URLs (Claude, Copilot BYOK, Gemini, universal LLM-consumer) consume this shared selection rather than hardcoding a host, and Claude's harness continues to overwrite the bootstrap URL with the endpoint discovered through AWF `/reflect`.
+The shared helper in `pkg/workflow/llm_provider.go` selects the LLM gateway hostname: emit `api-proxy` when `isAWFNetworkIsolationEnabled(workflowData)` or `isLegacySecurityRuntime(workflowData)` is true, and retain `host.docker.internal` otherwise. All engines that build gateway URLs (Claude, Copilot BYOK, Gemini, universal LLM-consumer) consume this shared selection rather than hardcoding a host, and Claude's harness continues to overwrite the bootstrap URL with the endpoint discovered through AWF `/reflect`.
+
+The host-access exception in the original decision was incorrect (see [github/gh-aw#72756](https://github.com/github/gh-aw/issues/72756)). In `docker-sudo-iptables`, the API proxy and agent share AWF's internal network even though MCP sidecars use the host-access topology. Host access for GitHub Actions services, such as PostgreSQL at `host.docker.internal:5432`, does not publish the inference proxy on host port `10002`. Gateway selection must remain independent of that service-access capability; the legacy-security, host-access, and port-allowlist settings are unchanged.
 
 ### Alternatives Considered
 
 #### Alternative 1: Always emit `api-proxy`
 
-Simplest possible change: replace the hardcoded `host.docker.internal` with `api-proxy` everywhere. Rejected because non-isolated and host-access firewall profiles do not resolve the `api-proxy` service name; this would move the breakage from isolated runs to every other profile.
+Simplest possible change: replace the hardcoded `host.docker.internal` with `api-proxy` everywhere. Rejected because modes outside the shared internal-proxy topology retain the host-gateway bootstrap. Host-access capability alone does not determine which gateway is reachable.
 
 #### Alternative 2: Rely solely on runtime endpoint discovery (`/reflect`)
 
@@ -33,7 +35,7 @@ Configure `extra_hosts`/DNS in the isolated compose topology so the existing URL
 #### Positive
 - Isolated AWF runs get a reachable bootstrap gateway URL, so Claude's pre-flight check succeeds and #66788 is resolved.
 - Host selection lives in one shared helper, so every engine stays consistent and future gateway consumers inherit the behaviour automatically.
-- Compiled lock files now make the expected network topology explicit and testable (tests assert `api-proxy` for isolated profiles and `host.docker.internal` otherwise).
+- Compiled lock files make the expected network topology explicit and testable (tests assert `api-proxy` for isolated and legacy host-access profiles, and `host.docker.internal` otherwise).
 
 #### Negative
 - Gateway URL generation now depends on `workflowData`, coupling URL construction to workflow configuration and requiring that parameter to be threaded through engine call sites.
@@ -43,7 +45,7 @@ Configure `extra_hosts`/DNS in the isolated compose topology so the existing URL
 #### Neutral
 - `api-proxy` becomes a de facto stable service-name contract between the compiler and the AWF compose topology.
 - The `smoke-claude-on-copilot` workflow keeps its two-day schedule but now performs a model-generated observation before returning `noop`, and its lock file was regenerated as part of this change.
-- Behaviour for non-isolated and host-access profiles is unchanged.
+- Non-isolated bootstrap behaviour is unchanged except for the corrected internal API-proxy route in `docker-sudo-iptables`; host-service connectivity and credential isolation are unchanged.
 
 ---
 

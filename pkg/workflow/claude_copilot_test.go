@@ -92,6 +92,74 @@ func TestClaudeCopilotNativeModelIDs(t *testing.T) {
 	}
 }
 
+func TestClaudeCopilotHostAccessGatewayCompilation(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		engine string
+	}{
+		{"built-in harness", "engine: claude"},
+		{"custom command", "engine:\n  id: claude\n  command: custom-claude"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			workflowPath := filepath.Join(t.TempDir(), "claude-copilot-host-access.md")
+			source := `---
+on: workflow_dispatch
+` + test.engine + `
+model: copilot/auto
+strict: false
+permissions:
+  contents: read
+network:
+  allowed: [defaults]
+sandbox:
+  agent:
+    runtime: docker-sudo-iptables
+services:
+  postgres:
+    image: postgres:16
+    env:
+      POSTGRES_PASSWORD: test
+    ports:
+      - 5432:5432
+checkout: false
+tools:
+  github: false
+safe-outputs:
+  noop:
+  threat-detection: false
+---
+Connect to PostgreSQL at host.docker.internal:5432, then call noop.
+`
+			require.NoError(t, os.WriteFile(workflowPath, []byte(source), 0600))
+			compiler := NewCompiler()
+			require.NoError(t, compiler.CompileWorkflow(workflowPath))
+			lock, err := os.ReadFile(stringutil.MarkdownToLockFile(workflowPath))
+			require.NoError(t, err)
+			agent := extractJobSection(string(lock), "agent")
+
+			assert.Contains(t, agent, "ANTHROPIC_BASE_URL: http://api-proxy:10002")
+			assert.NotContains(t, agent, "host.docker.internal:10002")
+			assert.Contains(t, agent, "GH_AW_LLM_PROVIDER: github")
+			assert.Contains(t, agent, "ANTHROPIC_MODEL: auto")
+			assert.Contains(t, agent, "COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}")
+			assert.NotContains(t, agent, "secrets.ANTHROPIC_API_KEY")
+			assert.Contains(t, agent, "--exclude-env COPILOT_GITHUB_TOKEN")
+			assert.Contains(t, agent, "--exclude-env ANTHROPIC_API_KEY")
+
+			assert.Contains(t, agent, constants.AWFLegacySecurityCommand)
+			assert.Contains(t, agent, "--legacy-security")
+			assert.Contains(t, agent, "--enable-host-access")
+			assert.Contains(t, agent, `--allow-host-service-ports "${{ job.services['postgres'].ports['5432'] }}"`)
+			assert.Contains(t, agent, "--allow-host-ports 80,443,8080")
+			assert.NotContains(t, agent, "--allow-host-ports 80,443,8080,10002")
+			assert.Contains(t, agent, "image: postgres:16")
+			assert.Contains(t, agent, "5432:5432")
+			// Keep the legacy iptables topology rather than enabling MCP-sidecar isolation.
+			assert.NotContains(t, agent, `"isolation":true`)
+		})
+	}
+}
+
 func TestCopilotAutoModelCompilation(t *testing.T) {
 	for _, engine := range []string{"claude", "codex"} {
 		for _, model := range []string{"auto", "copilot/auto"} {

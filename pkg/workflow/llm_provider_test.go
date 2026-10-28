@@ -26,12 +26,28 @@ func TestLLMProviderGatewayBaseURLFollowsNetworkTopology(t *testing.T) {
 			expectedURL: "http://" + constants.AWFAPIProxyHostname + ":" + strconv.Itoa(constants.CopilotLLMGatewayPort),
 		},
 		{
-			name: "host-access runtime",
+			name: "host-access runtime with Anthropic",
 			workflowData: &WorkflowData{
 				SandboxConfig: &SandboxConfig{Agent: &AgentSandboxConfig{ID: "awf", Runtime: AgentRuntimeDockerSudoIptables}},
 			},
 			provider:    LLMProviderAnthropic,
-			expectedURL: "http://host.docker.internal:" + strconv.Itoa(constants.ClaudeLLMGatewayPort),
+			expectedURL: "http://" + constants.AWFAPIProxyHostname + ":" + strconv.Itoa(constants.ClaudeLLMGatewayPort),
+		},
+		{
+			name: "host-access runtime with Copilot",
+			workflowData: &WorkflowData{
+				SandboxConfig: &SandboxConfig{Agent: &AgentSandboxConfig{ID: "awf", Runtime: AgentRuntimeDockerSudoIptables}},
+			},
+			provider:    LLMProviderGitHub,
+			expectedURL: "http://" + constants.AWFAPIProxyHostname + ":" + strconv.Itoa(constants.CopilotLLMGatewayPort),
+		},
+		{
+			name: "host-access runtime with OpenAI",
+			workflowData: &WorkflowData{
+				SandboxConfig: &SandboxConfig{Agent: &AgentSandboxConfig{ID: "awf", Runtime: AgentRuntimeDockerSudoIptables}},
+			},
+			provider:    LLMProviderOpenAI,
+			expectedURL: "http://" + constants.AWFAPIProxyHostname + ":" + strconv.Itoa(constants.CodexLLMGatewayPort),
 		},
 		{
 			name: "non-isolated runtime",
@@ -40,6 +56,14 @@ func TestLLMProviderGatewayBaseURLFollowsNetworkTopology(t *testing.T) {
 			},
 			provider:    LLMProviderOpenAI,
 			expectedURL: "http://host.docker.internal:" + strconv.Itoa(constants.CodexLLMGatewayPort),
+		},
+		{
+			name: "disabled host-access runtime",
+			workflowData: &WorkflowData{
+				SandboxConfig: &SandboxConfig{Agent: &AgentSandboxConfig{Disabled: true, Runtime: AgentRuntimeDockerSudoIptables}},
+			},
+			provider:    LLMProviderGitHub,
+			expectedURL: "http://host.docker.internal:" + strconv.Itoa(constants.CopilotLLMGatewayPort),
 		},
 	}
 
